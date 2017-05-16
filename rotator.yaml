@@ -1,0 +1,36 @@
+---
+secretfile: client_secret.json
+generatedays: 30
+availabilitycalendar: replacethis@group.calendar.google.com
+oncallcalendar: replacethis@group.calendar.google.com
+mailserver: mail.example.com:25
+mailsender: admin@example.com
+
+awaywords:
+  - away
+  - urlaub
+  - krank
+  - vacation
+  - leave
+
+oncallers:
+  - order: 0
+    code: aa
+    email: alice.anderson@example.com
+  - order: 1
+    code: bob
+    calendaremail: bob.athome@example.org
+    email: bob.bobson@example.com
+  - order: 2
+    code: fb
+    email: fred.bloggs@example.com
+  - order: 3
+    code: jd
+    calendaremail: jane.doe.home@example.net
+    email: jane.doe@example.com
+  - order: 4
+    code: mm
+    email: max.mustermann@example.com
+  - order: 5
+    code: em
+    email: erika.mustermann@example.com
