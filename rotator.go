@@ -94,7 +94,6 @@ func init() {
 
 func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	unavailable := []string{}
-
 	events, err := getDayEvents(srv, day)
 
 	if len(events) > 0 {
@@ -160,11 +159,11 @@ func main() {
 		log.Fatalf("Unable to initialise calendar client: %v", err)
 	}
 	// Stash today's oncaller for future reference (may be empty)
-	oncaller := getOncallByDay(srv, time.Now())
+	oncaller := getOncallByDay(srv, time.Now()).Victim
 
 	// Generate the monitoring file if that's all we need to do.
 	if *monitorFile != "" {
-		oncaller := getOncallByDay(srv, time.Now())
+		oncaller := getOncallByDay(srv, time.Now()).Victim
 		err := writeMonitoringFile(oncaller, config.Oncallers, *monitorFile)
 		if err != nil {
 			fmt.Printf("Monitoring file creation failed: %s", err)
@@ -173,7 +172,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	srv_oncall := getOncallByDay(srv, start_date)
+	srv_oncall := getOncallByDay(srv, start_date).Victim
 
 	if *lastOn != "" {
 		last_oncall = *lastOn
@@ -218,9 +217,9 @@ func main() {
 	}
 
 	// Check to see if today's oncaller has changed
-	if oncaller != getOncallByDay(srv, time.Now()) {
+	if oncaller != getOncallByDay(srv, time.Now()).Victim {
 		// Notify the new oncaller
-		err := doNotify(getOncallByDay(srv, time.Now()), "emergency")
+		err := doNotify(getOncallByDay(srv, time.Now()).Victim, "emergency")
 		if err != nil {
 			fmt.Printf("Error sending mail: %s\n", err)
 		}
@@ -230,9 +229,9 @@ func main() {
 	var notifyresult error
 	switch *notifyVictim {
 	case "today":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now()), "today")
+		notifyresult = doNotify(getOncallByDay(srv, time.Now()).Victim, "today")
 	case "tomorrow":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now().AddDate(0, 0, 1)), "tomorrow")
+		notifyresult = doNotify(getOncallByDay(srv, time.Now().AddDate(0, 0, 1)).Victim, "tomorrow")
 	}
 	if notifyresult != nil {
 		fmt.Printf("Error sending mail: %s\n", notifyresult)

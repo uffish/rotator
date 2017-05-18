@@ -20,6 +20,11 @@ import (
 	"google.golang.org/api/calendar/v3"
 )
 
+type OncallDay struct {
+	Victim string
+	Fixed  bool
+}
+
 // getClient uses a Context and Config to retrieve a Token
 // then generate a Client. It returns the generated Client.
 func getClient(ctx context.Context, config *oauth2.Config) *http.Client {
@@ -48,8 +53,10 @@ func getDayEvents(srv *calendar.Service, day time.Time) ([]*calendar.Event, erro
 }
 
 // Find the person in the oncall calendar for a given day.
-func getOncallByDay(srv *calendar.Service, day time.Time) string {
-	oncall_re := regexp.MustCompile(`(?i)(\w{2,3}).*onduty`)
+func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
+	// Returns: [full match, code, -fix]
+	oncall_re := regexp.MustCompile(`(?i)(\w{2,3}).*onduty(-fix)?`)
+	fixed := false
 	starttime := day.Truncate(time.Hour * 24).Add(time.Second)
 	endtime := starttime.Add(time.Minute)
 	// calendars, err := srv.Calendars.List
@@ -69,13 +76,16 @@ func getOncallByDay(srv *calendar.Service, day time.Time) string {
 				if match == nil {
 					continue
 				} else {
-					return strings.ToLower(match[1])
+					if match[2] != "" {
+						fixed = true
+					}
+					return OncallDay{strings.ToLower(match[1]), fixed}
 				}
 			}
 		}
 	}
 	// If nobody was oncall..
-	return ""
+	return OncallDay{"", false}
 }
 
 // getTokenFromWeb uses Config to request a Token.
@@ -117,7 +127,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 	oncall := victim.Code
 
 	existing := getOncallByDay(srv, day)
-	if existing == oncall {
+	if existing.Victim == oncall || existing.Fixed == true {
 		// Nothing to do!
 		return true
 	}
@@ -152,7 +162,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 				if *Verbose == true {
 					fmt.Printf("%s is now oncall on %s (was %s)\n", victim.Code,
 						day.Format("2006-01-02"),
-						existing)
+						existing.Victim)
 				}
 				rewritten = true
 			}
