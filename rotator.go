@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/uffish/holidays"
+	"github.com/uffish/holidays/austria"
 	"google.golang.org/api/calendar/v3"
 	"gopkg.in/yaml.v1"
 )
@@ -193,7 +194,7 @@ func main() {
 	for x := 1; x < days+1; x++ {
 		today := start_date.AddDate(0, 0, x)
 		workday := true
-		hols := holidays.GetHolidays()
+		hols := austria.GetHolidays()
 
 		if (holidays.CheckIsBusinessDay(today, hols) == false) &&
 			(holidays.CheckIsBusinessDay(today.AddDate(0, 0, -1), hols) == false) {
