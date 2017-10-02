@@ -1,10 +1,15 @@
 ---
 secretfile: client_secret.json
 generatedays: 30
+maxdayspermonth: 10
+maxweekendspermonth: 1
+shadowoncaller: nn
 availabilitycalendar: replacethis@group.calendar.google.com
 oncallcalendar: replacethis@group.calendar.google.com
 mailserver: mail.example.com:25
 mailsender: admin@example.com
+slackkey: my_slack_api_key
+slackchannel: my_slack_channel_id
 
 awaywords:
   - away

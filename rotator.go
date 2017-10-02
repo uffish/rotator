@@ -26,22 +26,40 @@ type oncallPerson struct {
 	Code          string
 	CalendarEmail string
 	Email         string
+	SlackID       string
 }
 
+// mostly self-explanatory, although:
+// MaxDaysPerMonth: Maximum days per month an individual may be oncall
+// MaxWeekendsPerMonth: No more than this number of weekends/month/person
+// ShadowOncaller: Will be listed as oncall if no oncaller can be found
+// given the restrictions above
 type Config struct {
 	SecretFile           string
 	GenerateDays         int
+	MaxDaysPerMonth      int
+	MaxWeekendsPerMonth  int
 	MailServer           string
 	MailSender           string
 	AvailabilityCalendar string
 	OncallCalendar       string
+	SlackKey             string
+	SlackChannel         string
+	ShadowOncaller       string
 	AwayWords            []string
 	Oncallers            []oncallPerson
+}
+
+type Restrictions struct {
+	Month  time.Month
+	Year   int
+	Detail map[string]*Restriction
 }
 
 var config Config
 var oncallersByCode map[string]oncallPerson
 var oncallersByOrder map[int]oncallPerson
+var restrictions Restrictions
 var holiday_re *regexp.Regexp
 
 var (
@@ -52,6 +70,8 @@ var (
 	monitorFile  = flag.String("monitoring.file", "", "If set, write monitoring status to file and exit.")
 	notifyVictim = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
 	Verbose      = flag.Bool("v", false, "Print extra debugging information")
+	DryRun       = flag.Bool("dry_run", true, "Don't actually write any calendar entries")
+	Unrestrict   = flag.Bool("unrestrict", false, "Start restrictions from zero (for recasting schedule)")
 )
 
 func init() {
@@ -95,8 +115,34 @@ func init() {
 
 func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	unavailable := []string{}
+	overloaded := []string{}
 	events, err := getDayEvents(srv, day)
 
+	// this operation's expensive, so only fetch restriction data when we have to.
+	if config.MaxDaysPerMonth+config.MaxWeekendsPerMonth > 0 {
+		if restrictions.Month != day.Month() ||
+			restrictions.Year != day.Year() {
+			// this operation's expensive, so only fetch restriction data when we have to.
+
+			if *Verbose {
+				fmt.Printf("Fetching restriction info\n")
+			}
+			restrictions.Detail = getOncallMonthRestrictions(srv, day)
+			restrictions.Month = day.Month()
+			restrictions.Year = day.Year()
+		}
+
+		for k, v := range restrictions.Detail {
+			if v.DaysBooked >= config.MaxDaysPerMonth ||
+				(isWeekend(day) && v.WeekendsBooked >= config.MaxWeekendsPerMonth) {
+				if *Verbose {
+					fmt.Printf("Oncaller overloaded: %s, %d/%d\n", k, v.DaysBooked, v.WeekendsBooked)
+				}
+				overloaded = append(overloaded, strings.ToLower(k))
+				unavailable = append(unavailable, strings.ToLower(k))
+			}
+		}
+	}
 	if len(events) > 0 {
 		for _, e := range events {
 			// Only look for all-day events (these have no associated time, just a date)
@@ -110,7 +156,16 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 			}
 		}
 	}
-	return unavailable, err
+
+	finallist := []string{}
+	j := make(map[string]bool)
+	for _, i := range unavailable {
+		if !j[i] {
+			j[i] = true
+			finallist = append(finallist, i)
+		}
+	}
+	return finallist, err
 }
 
 func findNextOncall(unavailable []string, last_oncall string,
