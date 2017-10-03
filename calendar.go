@@ -59,12 +59,13 @@ func getDayEvents(srv *calendar.Service, day time.Time) ([]*calendar.Event, erro
 
 func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[string]*Restriction {
 	res := make(map[string]*Restriction)
+	res[oncallerShadow.Code] = &Restriction{-31, -31}
 
 	for _, person := range config.Oncallers {
 		res[person.Code] = &Restriction{0, 0}
 	}
 
-	if *Unrestrict {
+	if *Unrestrict == true {
 		// recast the schedule from scratch, so return all zeeeeeeeroes.
 		return res
 	}
@@ -92,7 +93,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 		// 	fmt.Printf("Day: %d/%d Victim: %s WE: %t\n", day+1, weekday, oncall.Victim, isWeekend(firstday.AddDate(0, 0, day)))
 		// }
 	}
-	if *Verbose {
+	if *Verbose == true {
 		fmt.Printf("Oncall restrictions for %s %d:\n", month.Month(), month.Year())
 		for v, r := range res {
 			fmt.Printf("Oncaller: %s Days: %d WE: %d\n", v, r.DaysBooked, r.WeekendsBooked)
@@ -104,7 +105,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 // Find the person in the oncall calendar for a given day.
 func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
 	// Returns: [full match, code, -fix]
-	oncall_re := regexp.MustCompile(`(?i)(\w{2,3}).*onduty(-fix)?`)
+	oncallRe := regexp.MustCompile(`(?i)(\w{2,3}).*onduty(-fix)?`)
 	fixed := false
 	starttime := day.Truncate(time.Hour * 24).Add(time.Second)
 	endtime := starttime.Add(time.Minute)
@@ -121,7 +122,7 @@ func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
 		for _, event := range events.Items {
 			if event.Start.DateTime == "" {
 				title := event.Summary
-				match := oncall_re.FindStringSubmatch(title)
+				match := oncallRe.FindStringSubmatch(title)
 				if match == nil {
 					continue
 				} else {
@@ -184,11 +185,18 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 
 	existing := getOncallByDay(srv, day)
 	if existing.Victim == oncall || existing.Fixed == true {
-		// Nothing to do!
+		// Nothing to do except increment their load counter if we reset it
+		if *Unrestrict == true && existing.Fixed == false {
+			restrictions.Detail[victim.Code].DaysBooked++
+			if isWeekend(day) {
+				restrictions.Detail[victim.Code].WeekendsBooked++
+			}
+		}
 		return true
 	}
+
 	// otherwise we need to rewrite it.
-	oncall_re := regexp.MustCompile(`(?i)(\w{2,3}).*onduty`)
+	oncallRe := regexp.MustCompile(`(?i)(\w{2,3}).*onduty`)
 	starttime := day.Truncate(time.Hour * 24)
 	endtime := starttime.Add(time.Minute)
 
@@ -204,7 +212,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 	if len(events.Items) > 0 {
 		for _, event := range events.Items {
 			title := event.Summary
-			match := oncall_re.FindStringSubmatch(title)
+			match := oncallRe.FindStringSubmatch(title)
 			if match == nil {
 				continue
 			} else {

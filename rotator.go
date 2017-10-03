@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -33,7 +34,7 @@ type oncallPerson struct {
 // MaxDaysPerMonth: Maximum days per month an individual may be oncall
 // MaxWeekendsPerMonth: No more than this number of weekends/month/person
 // ShadowOncaller: Will be listed as oncall if no oncaller can be found
-// given the restrictions above
+// given the restrictions above - defaults to 'xx'
 type Config struct {
 	SecretFile           string
 	GenerateDays         int
@@ -60,6 +61,7 @@ var config Config
 var oncallersByCode map[string]oncallPerson
 var oncallersByOrder map[int]oncallPerson
 var restrictions Restrictions
+var oncallerShadow oncallPerson
 var holiday_re *regexp.Regexp
 
 var (
@@ -86,6 +88,12 @@ func init() {
 	err = yaml.Unmarshal(yamlfile, &config)
 	if err != nil {
 		log.Panic(err)
+	}
+
+	if config.ShadowOncaller != "" {
+		oncallerShadow.Code = config.ShadowOncaller
+	} else {
+		oncallerShadow.Code = "xx"
 	}
 
 	oncallersByOrder = make(map[int]oncallPerson)
@@ -122,8 +130,6 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	if config.MaxDaysPerMonth+config.MaxWeekendsPerMonth > 0 {
 		if restrictions.Month != day.Month() ||
 			restrictions.Year != day.Year() {
-			// this operation's expensive, so only fetch restriction data when we have to.
-
 			if *Verbose {
 				fmt.Printf("Fetching restriction info\n")
 			}
@@ -170,13 +176,25 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 
 func findNextOncall(unavailable []string, lastOncall string,
 	workday bool) oncallPerson {
-	// find array index of lastOncall
+	var lastIndex int
 	nextIndex := -1
-	lastIndex := oncallersByCode[lastOncall].Order
+
+	// find array index of lastOncall
+	if lastOncall == oncallerShadow.Code {
+		// A random guess is probably as good as any..
+		lastIndex = rand.Int() % len(oncallersByOrder)
+	} else {
+		lastIndex = oncallersByCode[lastOncall].Order
+	}
 
 	// If it's a holiday, default to the same person as yesterday
 	if workday == false {
 		lastIndex = (lastIndex - 1) % len(oncallersByOrder)
+	}
+
+	if len(unavailable) == len(oncallersByOrder) {
+		// uh-oh, nobody is available!
+		return oncallerShadow
 	}
 
 	// Loop through candidates looking for the next person in the rotation
@@ -258,6 +276,19 @@ func main() {
 		unavailable, err := checkAvailability(srv, today)
 		if err != nil {
 			log.Fatalf("Unable to read calendar events: %v", err)
+		}
+
+		// check to see if there's a fixed entry - if so, skip from here
+		fixcheck := getOncallByDay(srv, today)
+		if fixcheck.Fixed == true {
+			lastOncall = fixcheck.Victim
+			if *Verbose == true {
+				fmt.Printf("%s: %s # Fixed,Out: %s\n",
+					today.Format("Mon 2006-01-02"),
+					fixcheck.Victim,
+					strings.Join(unavailable, ","))
+			}
+			continue
 		}
 
 		todayOncall := findNextOncall(unavailable, lastOncall, workday)
