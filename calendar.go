@@ -74,14 +74,19 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 	// why does this work? because day 0 of a month is the last day of month-1!
 	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
 	for day := 0; day < daysinmonth; day++ {
-		oncall := getOncallByDay(srv, firstday.AddDate(0, 0, day))
+		nextday := firstday.AddDate(0, 0, day)
+		oncall := getOncallByDay(srv, nextday)
 		if oncall.Victim == "" {
 			continue
 		}
 
 		res[oncall.Victim].DaysBooked++
-		if isWeekend(firstday.AddDate(0, 0, day)) {
+		if isWeekend(nextday) {
 			res[oncall.Victim].WeekendsBooked++
+			// if day 1 is a Sunday, add 2 to avoid off-by-one errors later on...
+			if nextday.Weekday() == 0 && nextday.Day() == 1 {
+				res[oncall.Victim].WeekendsBooked++
+			}
 		}
 		// if *Verbose {
 		// 	fmt.Printf("Day: %d/%d Victim: %s WE: %t\n", day+1, weekday, oncall.Victim, isWeekend(firstday.AddDate(0, 0, day)))

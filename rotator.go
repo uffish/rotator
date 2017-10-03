@@ -168,46 +168,46 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	return finallist, err
 }
 
-func findNextOncall(unavailable []string, last_oncall string,
+func findNextOncall(unavailable []string, lastOncall string,
 	workday bool) oncallPerson {
-	// find array index of last_oncall
-	next_index := -1
-	last_index := oncallersByCode[last_oncall].Order
+	// find array index of lastOncall
+	nextIndex := -1
+	lastIndex := oncallersByCode[lastOncall].Order
 
 	// If it's a holiday, default to the same person as yesterday
 	if workday == false {
-		last_index = (last_index - 1) % len(oncallersByOrder)
+		lastIndex = (lastIndex - 1) % len(oncallersByOrder)
 	}
 
 	// Loop through candidates looking for the next person in the rotation
 	// who's available
-	for next_index < 0 {
+	for nextIndex < 0 {
 		available := true
-		last_index = (last_index + 1) % len(oncallersByOrder)
-		candidate := oncallersByOrder[last_index]
+		lastIndex = (lastIndex + 1) % len(oncallersByOrder)
+		candidate := oncallersByOrder[lastIndex]
 		for _, i := range unavailable {
 			if i == candidate.Code {
 				available = false
 			}
 		}
 		if available {
-			next_index = last_index
+			nextIndex = lastIndex
 		}
 	}
 	// And we're done.
-	return oncallersByOrder[next_index]
+	return oncallersByOrder[nextIndex]
 }
 
 func main() {
 
-	time_parse := "2006-01-02"
-	var start_date time.Time
-	var last_oncall string
+	timeParse := "2006-01-02"
+	var firstDate time.Time
+	var lastOncall string
 
 	if *startDate == "" {
-		start_date = time.Now().AddDate(0, 0, -1)
+		firstDate = time.Now().AddDate(0, 0, -1)
 	} else {
-		start_date, _ = time.Parse(time_parse, *startDate)
+		firstDate, _ = time.Parse(timeParse, *startDate)
 	}
 
 	srv, err := initCalendar(config.SecretFile)
@@ -219,7 +219,6 @@ func main() {
 
 	// Generate the monitoring file if that's all we need to do.
 	if *monitorFile != "" {
-		oncaller := getOncallByDay(srv, time.Now()).Victim
 		err := writeMonitoringFile(oncaller, config.Oncallers, *monitorFile)
 		if err != nil {
 			fmt.Printf("Monitoring file creation failed: %s", err)
@@ -228,14 +227,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	srv_oncall := getOncallByDay(srv, start_date).Victim
+	srvOncall := getOncallByDay(srv, firstDate).Victim
 
 	if *lastOn != "" {
-		last_oncall = *lastOn
-	} else if srv_oncall != "" {
-		last_oncall = srv_oncall
+		lastOncall = *lastOn
+	} else if srvOncall != "" {
+		lastOncall = srvOncall
 	} else {
-		last_oncall = oncallersByOrder[0].Code
+		lastOncall = oncallersByOrder[0].Code
 	}
 
 	// Default to 30 days unless overridden
@@ -247,7 +246,7 @@ func main() {
 	}
 
 	for x := 1; x < days+1; x++ {
-		today := start_date.AddDate(0, 0, x)
+		today := firstDate.AddDate(0, 0, x)
 		workday := true
 		hols := austria.GetHolidays()
 
@@ -261,15 +260,15 @@ func main() {
 			log.Fatalf("Unable to read calendar events: %v", err)
 		}
 
-		today_oncall := findNextOncall(unavailable, last_oncall, workday)
+		todayOncall := findNextOncall(unavailable, lastOncall, workday)
 		if *Verbose == true {
 			fmt.Printf("%s: %s # Out: %s\n",
 				today.Format("Mon 2006-01-02"),
-				today_oncall.Code,
+				todayOncall.Code,
 				strings.Join(unavailable, ","))
 		}
-		setOncallByDay(srv, today, today_oncall)
-		last_oncall = today_oncall.Code
+		setOncallByDay(srv, today, todayOncall)
+		lastOncall = todayOncall.Code
 	}
 
 	// Check to see if today's oncaller has changed
