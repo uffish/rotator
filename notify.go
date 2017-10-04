@@ -19,6 +19,7 @@ type Mail struct {
 // Send the oncall notification mail.
 func doNotify(victim string, when string) error {
 	address := ""
+	slackID := ""
 	var err error
 	var mail Mail
 	emergency := false
@@ -61,6 +62,7 @@ func doNotify(victim string, when string) error {
 	for _, c := range config.Oncallers {
 		if c.Code == victim {
 			address = c.Email
+			slackID = c.SlackID
 		}
 	}
 	if address != "" {
@@ -71,6 +73,10 @@ func doNotify(victim string, when string) error {
 	}
 	if config.MailServer == "" {
 		config.MailServer = "localhost:25"
+	}
+	if config.SlackKey != "" {
+		slackMessage := fmt.Sprintf("Hello %s! This is to remind you that you're on duty today.", victim)
+		notifySlack(slackID, slackMessage)
 	}
 	err = mailSend(mail, config.MailServer)
 	if err != nil {
@@ -96,7 +102,7 @@ func mailSend(mail Mail, server string) error {
 	fulltext := strings.Join(headers, "\r\n") + "\r\n\r\n"
 	// And add the body
 	fulltext += strings.Join(mail.Body, "\r\n") + "\r\n"
-	if *Verbose == true {
+	if *flagDebug {
 		fmt.Printf("Sending mail:\n%s", fulltext)
 	}
 	err := smtp.SendMail(server,
