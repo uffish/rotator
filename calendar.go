@@ -65,7 +65,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 		res[person.Code] = &Restriction{0, 0}
 	}
 
-	if *Unrestrict == true {
+	if *flagUnrestrict {
 		// recast the schedule from scratch, so return all zeeeeeeeroes.
 		return res
 	}
@@ -93,7 +93,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 		// 	fmt.Printf("Day: %d/%d Victim: %s WE: %t\n", day+1, weekday, oncall.Victim, isWeekend(firstday.AddDate(0, 0, day)))
 		// }
 	}
-	if *Verbose == true {
+	if *flagVerbose {
 		fmt.Printf("Oncall restrictions for %s %d:\n", month.Month(), month.Year())
 		for v, r := range res {
 			fmt.Printf("Oncaller: %s Days: %d WE: %d\n", v, r.DaysBooked, r.WeekendsBooked)
@@ -186,7 +186,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 	existing := getOncallByDay(srv, day)
 	if existing.Victim == oncall || existing.Fixed == true {
 		// Nothing to do except increment their load counter if we reset it
-		if *Unrestrict == true && existing.Fixed == false {
+		if *flagUnrestrict == true && existing.Fixed == false {
 			restrictions.Detail[victim.Code].DaysBooked++
 			if isWeekend(day) {
 				restrictions.Detail[victim.Code].WeekendsBooked++
@@ -219,13 +219,13 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 				eventAttendees := makeAttendees([]oncallPerson{victim})
 				event.Attendees = eventAttendees
 				event.Summary = fmt.Sprintf("%s onduty", oncall)
-				if *DryRun == false {
+				if *flagDryRun == false {
 					_, err := srv.Events.Update(config.OncallCalendar, event.Id, event).Do()
 					if err != nil {
 						log.Fatalf("Event update failed: %s\n", err)
 					}
 				}
-				if *Verbose == true {
+				if *flagVerbose {
 					fmt.Printf("%s is now oncall on %s (was %s)\n", victim.Code,
 						day.Format("2006-01-02"),
 						existing.Victim)
@@ -242,7 +242,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 			Start:     &calendar.EventDateTime{Date: starttime.Format("2006-01-02")},
 			End:       &calendar.EventDateTime{Date: starttime.AddDate(0, 0, 1).Format("2006-01-02")},
 		}
-		if *DryRun == false {
+		if *flagDryRun == false {
 			_, err := srv.Events.Insert(config.OncallCalendar, &newEvent).Do()
 			if err != nil {
 				fmt.Println(err)

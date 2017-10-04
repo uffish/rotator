@@ -102,7 +102,7 @@ func mailSend(mail Mail, server string) error {
 	fulltext := strings.Join(headers, "\r\n") + "\r\n\r\n"
 	// And add the body
 	fulltext += strings.Join(mail.Body, "\r\n") + "\r\n"
-	if *Verbose == true {
+	if *flagDebug {
 		fmt.Printf("Sending mail:\n%s", fulltext)
 	}
 	err := smtp.SendMail(server,

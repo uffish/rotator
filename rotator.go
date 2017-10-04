@@ -65,15 +65,16 @@ var oncallerShadow oncallPerson
 var holiday_re *regexp.Regexp
 
 var (
-	startDate    = flag.String("startdate", "", "Start date (YYYY-MM-DD) for rota generation")
-	lastOn       = flag.String("laston", "", "Seed rota with yesterday's oncall person")
-	generateDays = flag.Int("days", 0, "Number of days of rota to generate (overrides config file)")
-	configFile   = flag.String("configfile", "rotator.yaml", "Where to look for config file")
-	monitorFile  = flag.String("monitoring.file", "", "If set, write monitoring status to file and exit.")
-	notifyVictim = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
-	Verbose      = flag.Bool("v", false, "Print extra debugging information")
-	DryRun       = flag.Bool("dry_run", true, "Don't actually write any calendar entries")
-	Unrestrict   = flag.Bool("unrestrict", false, "Start restrictions from zero (for recasting schedule)")
+	startDate      = flag.String("startdate", "", "Start date (YYYY-MM-DD) for rota generation")
+	lastOn         = flag.String("laston", "", "Seed rota with yesterday's oncall person")
+	generateDays   = flag.Int("days", 0, "Number of days of rota to generate (overrides config file)")
+	configFile     = flag.String("configfile", "rotator.yaml", "Where to look for config file")
+	monitorFile    = flag.String("monitoring.file", "", "If set, write monitoring status to file and exit.")
+	notifyVictim   = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
+	flagDebug      = flag.Bool("d", false, "Print spammy debugging information")
+	flagVerbose    = flag.Bool("v", false, "Be a bit more verbose")
+	flagDryRun     = flag.Bool("dry_run", true, "Don't actually write any calendar entries")
+	flagUnrestrict = flag.Bool("unrestrict", false, "Start restrictions from zero (for recasting schedule)")
 )
 
 func init() {
@@ -130,7 +131,7 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	if config.MaxDaysPerMonth+config.MaxWeekendsPerMonth > 0 {
 		if restrictions.Month != day.Month() ||
 			restrictions.Year != day.Year() {
-			if *Verbose {
+			if *flagDebug {
 				fmt.Printf("Fetching restriction info\n")
 			}
 			restrictions.Detail = getOncallMonthRestrictions(srv, day)
@@ -139,9 +140,14 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 		}
 
 		for k, v := range restrictions.Detail {
+			// skip this if they're already oncall today, to avoid double-counting
+			todayOncall := getOncallByDay(srv, day)
+			if todayOncall.Victim == k {
+				continue
+			}
 			if v.DaysBooked >= config.MaxDaysPerMonth ||
 				(isWeekend(day) && v.WeekendsBooked >= config.MaxWeekendsPerMonth) {
-				if *Verbose {
+				if *flagDebug {
 					fmt.Printf("Oncaller overloaded: %s, %d/%d\n", k, v.DaysBooked, v.WeekendsBooked)
 				}
 				overloaded = append(overloaded, strings.ToLower(k))
@@ -164,6 +170,7 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	}
 
 	finallist := []string{}
+	// remove any duplicates
 	j := make(map[string]bool)
 	for _, i := range unavailable {
 		if !j[i] {
@@ -282,7 +289,7 @@ func main() {
 		fixcheck := getOncallByDay(srv, today)
 		if fixcheck.Fixed == true {
 			lastOncall = fixcheck.Victim
-			if *Verbose == true {
+			if *flagVerbose == true {
 				fmt.Printf("%s: %s # Fixed,Out: %s\n",
 					today.Format("Mon 2006-01-02"),
 					fixcheck.Victim,
@@ -292,7 +299,7 @@ func main() {
 		}
 
 		todayOncall := findNextOncall(unavailable, lastOncall, workday)
-		if *Verbose == true {
+		if *flagVerbose == true {
 			fmt.Printf("%s: %s # Out: %s\n",
 				today.Format("Mon 2006-01-02"),
 				todayOncall.Code,
