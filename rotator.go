@@ -73,7 +73,7 @@ var (
 	notifyVictim   = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
 	flagDebug      = flag.Bool("d", false, "Print spammy debugging information")
 	flagVerbose    = flag.Bool("v", false, "Be a bit more verbose")
-	flagDryRun     = flag.Bool("dry_run", true, "Don't actually write any calendar entries")
+	flagDryRun     = flag.Bool("dry_run", false, "Don't actually write any calendar entries")
 	flagUnrestrict = flag.Bool("unrestrict", false, "Start restrictions from zero (for recasting schedule)")
 )
 

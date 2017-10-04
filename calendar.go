@@ -93,7 +93,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 		// 	fmt.Printf("Day: %d/%d Victim: %s WE: %t\n", day+1, weekday, oncall.Victim, isWeekend(firstday.AddDate(0, 0, day)))
 		// }
 	}
-	if *flagVerbose {
+	if *flagDebug {
 		fmt.Printf("Oncall restrictions for %s %d:\n", month.Month(), month.Year())
 		for v, r := range res {
 			fmt.Printf("Oncaller: %s Days: %d WE: %d\n", v, r.DaysBooked, r.WeekendsBooked)
