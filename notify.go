@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type Mail struct {
+type message struct {
 	Destination string
 	Body        []string
 	Subject     string
@@ -17,11 +17,11 @@ type Mail struct {
 }
 
 // Send the oncall notification mail.
-func doNotify(victim string, when string) error {
-	address := ""
-	slackID := ""
+func doNotify(victim oncallPerson, when string) error {
+	var address string
+	var slackID string
 	var err error
-	var mail Mail
+	var mail message
 	emergency := false
 
 	d := time.Now()
@@ -40,7 +40,7 @@ func doNotify(victim string, when string) error {
 	mail.Subject = fmt.Sprintf("Reminder: You are on duty %s [%s]", when, dstring)
 	if emergency == false {
 		mail.Subject = fmt.Sprintf("Reminder: You are on duty %s [%s]", when, dstring)
-		mail.Body = []string{fmt.Sprintf("Dear %s,", victim),
+		mail.Body = []string{fmt.Sprintf("Dear %s,", victim.Code),
 			fmt.Sprintf("This is to remind you that you are on duty %s.", when),
 			"Have fun!",
 			"",
@@ -49,7 +49,7 @@ func doNotify(victim string, when string) error {
 		}
 	} else {
 		mail.Subject = fmt.Sprintf("Attention: You are on duty today! [%s]", dstring)
-		mail.Body = []string{fmt.Sprintf("Dear %s,", victim),
+		mail.Body = []string{fmt.Sprintf("Dear %s,", victim.Code),
 			"You are on duty today as the person previously on call is",
 			"unavailable on short notice. The on duty rota has therefore been moved",
 			"up by one day.",
@@ -59,12 +59,8 @@ func doNotify(victim string, when string) error {
 			" - the VSI onduty rotator",
 		}
 	}
-	for _, c := range config.Oncallers {
-		if c.Code == victim {
-			address = c.Email
-			slackID = c.SlackID
-		}
-	}
+	address = victim.Email
+	slackID = victim.SlackID
 	if address != "" {
 		mail.Destination = address
 	} else {
@@ -75,7 +71,7 @@ func doNotify(victim string, when string) error {
 		config.MailServer = "localhost:25"
 	}
 	if config.SlackKey != "" {
-		slackMessage := fmt.Sprintf("Hello %s! This is to remind you that you're on duty today.", victim)
+		slackMessage := fmt.Sprintf("Hello %s! This is to remind you that you're on duty today.", victim.Code)
 		notifySlack(slackID, slackMessage)
 	}
 	err = mailSend(mail, config.MailServer)
@@ -85,7 +81,7 @@ func doNotify(victim string, when string) error {
 	return err
 }
 
-func mailSend(mail Mail, server string) error {
+func mailSend(mail message, server string) error {
 
 	if mail.Sender == "" {
 		u, _ := user.Current()

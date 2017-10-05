@@ -3,34 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"math/rand"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/uffish/holidays"
 	"github.com/uffish/holidays/austria"
-	"google.golang.org/api/calendar/v3"
-	"gopkg.in/yaml.v1"
 )
 
-// Order: order in oncall sequence (0, 1, ...)
-// Code: 2-3 letter identification code (usually initials)
-// CalendarEmail: Google Calendar account email address
-// Email: email address for notifications.
-type oncallPerson struct {
-	Order         int
-	Code          string
-	CalendarEmail string
-	Email         string
-	SlackID       string
-}
-
-// mostly self-explanatory, although:
+// Config is mostly self-explanatory, although:
 // MaxDaysPerMonth: Maximum days per month an individual may be oncall
 // MaxWeekendsPerMonth: No more than this number of weekends/month/person
 // ShadowOncaller: Will be listed as oncall if no oncaller can be found
@@ -51,18 +34,45 @@ type Config struct {
 	Oncallers            []oncallPerson
 }
 
-type Restrictions struct {
+type oncallDay struct {
+	Victim oncallPerson
+	Fixed  bool
+}
+
+type oncallDaySet struct {
+	Days map[string]*oncallDay
+}
+
+// Order: order in oncall sequence (0, 1, ...)
+// Code: 2-3 letter identification code (usually initials)
+// CalendarEmail: Google Calendar account email address
+// Email: email address for notifications.
+type oncallPerson struct {
+	Order         int
+	Code          string
+	CalendarEmail string
+	Email         string
+	SlackID       string
+}
+
+type restriction struct {
+	DaysBooked     int
+	WeekendsBooked int
+}
+
+type restrictionSet struct {
 	Month  time.Month
 	Year   int
-	Detail map[string]*Restriction
+	Detail map[string]*restriction
 }
 
 var config Config
 var oncallersByCode map[string]oncallPerson
 var oncallersByOrder map[int]oncallPerson
-var restrictions Restrictions
+var oncall oncallDaySet
+var restrictions restrictionSet
 var oncallerShadow oncallPerson
-var holiday_re *regexp.Regexp
+var holidayRE *regexp.Regexp
 
 var (
 	startDate      = flag.String("startdate", "", "Start date (YYYY-MM-DD) for rota generation")
@@ -73,23 +83,14 @@ var (
 	notifyVictim   = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
 	flagDebug      = flag.Bool("d", false, "Print spammy debugging information")
 	flagVerbose    = flag.Bool("v", false, "Be a bit more verbose")
-	flagDryRun     = flag.Bool("dry_run", false, "Don't actually write any calendar entries")
+	flagDryRun     = flag.Bool("dry_run", true, "Don't actually write any calendar entries")
 	flagUnrestrict = flag.Bool("unrestrict", false, "Start restrictions from zero (for recasting schedule)")
 )
 
 func init() {
 	flag.Parse()
 
-	cfgfile, _ := filepath.Abs(*configFile)
-	yamlfile, err := ioutil.ReadFile(cfgfile)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = yaml.Unmarshal(yamlfile, &config)
-	if err != nil {
-		log.Panic(err)
-	}
+	config = unpackConfig(*configFile)
 
 	if config.ShadowOncaller != "" {
 		oncallerShadow.Code = config.ShadowOncaller
@@ -107,6 +108,8 @@ func init() {
 		oncallersByCode[person.Code] = person
 	}
 
+	oncall.Days = make(map[string]*oncallDay)
+
 	// If only OncallCalendar is specified, assume the same calendar should
 	// be used for availability information.
 	if config.OncallCalendar != "" && config.AvailabilityCalendar == "" {
@@ -119,132 +122,32 @@ func init() {
 	} else {
 		awaywords = "away|urlaub|krank|vacation|leave|familienzeit|za"
 	}
-	holiday_re = regexp.MustCompile(`(?i)(\w{2,3})[\s-]+(` + awaywords + `)`)
-}
-
-func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
-	unavailable := []string{}
-	overloaded := []string{}
-	events, err := getDayEvents(srv, day)
-
-	// this operation's expensive, so only fetch restriction data when we have to.
-	if config.MaxDaysPerMonth+config.MaxWeekendsPerMonth > 0 {
-		if restrictions.Month != day.Month() ||
-			restrictions.Year != day.Year() {
-			if *flagDebug {
-				fmt.Printf("Fetching restriction info\n")
-			}
-			restrictions.Detail = getOncallMonthRestrictions(srv, day)
-			restrictions.Month = day.Month()
-			restrictions.Year = day.Year()
-		}
-
-		for k, v := range restrictions.Detail {
-			// skip this if they're already oncall today, to avoid double-counting
-			todayOncall := getOncallByDay(srv, day)
-			if todayOncall.Victim == k {
-				continue
-			}
-			if v.DaysBooked >= config.MaxDaysPerMonth ||
-				(isWeekend(day) && v.WeekendsBooked >= config.MaxWeekendsPerMonth) {
-				if *flagDebug {
-					fmt.Printf("Oncaller overloaded: %s, %d/%d\n", k, v.DaysBooked, v.WeekendsBooked)
-				}
-				overloaded = append(overloaded, strings.ToLower(k))
-				unavailable = append(unavailable, strings.ToLower(k))
-			}
-		}
-	}
-	if len(events) > 0 {
-		for _, e := range events {
-			// Only look for all-day events (these have no associated time, just a date)
-			if e.Start.DateTime == "" {
-				title := e.Summary
-				match := holiday_re.FindStringSubmatch(title)
-				if match == nil {
-					continue
-				}
-				unavailable = append(unavailable, strings.ToLower(match[1]))
-			}
-		}
-	}
-
-	finallist := []string{}
-	// remove any duplicates
-	j := make(map[string]bool)
-	for _, i := range unavailable {
-		if !j[i] {
-			j[i] = true
-			finallist = append(finallist, i)
-		}
-	}
-	return finallist, err
-}
-
-func findNextOncall(unavailable []string, lastOncall string,
-	workday bool) oncallPerson {
-	var lastIndex int
-	nextIndex := -1
-
-	// find array index of lastOncall
-	if lastOncall == oncallerShadow.Code {
-		// A random guess is probably as good as any..
-		lastIndex = rand.Int() % len(oncallersByOrder)
-	} else {
-		lastIndex = oncallersByCode[lastOncall].Order
-	}
-
-	// If it's a holiday, default to the same person as yesterday
-	if workday == false {
-		lastIndex = (lastIndex - 1) % len(oncallersByOrder)
-	}
-
-	if len(unavailable) == len(oncallersByOrder) {
-		// uh-oh, nobody is available!
-		return oncallerShadow
-	}
-
-	// Loop through candidates looking for the next person in the rotation
-	// who's available
-	for nextIndex < 0 {
-		available := true
-		lastIndex = (lastIndex + 1) % len(oncallersByOrder)
-		candidate := oncallersByOrder[lastIndex]
-		for _, i := range unavailable {
-			if i == candidate.Code {
-				available = false
-			}
-		}
-		if available {
-			nextIndex = lastIndex
-		}
-	}
-	// And we're done.
-	return oncallersByOrder[nextIndex]
+	holidayRE = regexp.MustCompile(`(?i)(\w{2,3})[\s-]+(` + awaywords + `)`)
 }
 
 func main() {
 
-	timeParse := "2006-01-02"
 	var firstDate time.Time
-	var lastOncall string
+	var lastOncall oncallPerson
 
 	if *startDate == "" {
-		firstDate = time.Now().AddDate(0, 0, -1)
+		firstDate = time.Now()
 	} else {
-		firstDate, _ = time.Parse(timeParse, *startDate)
+		firstDate, _ = time.Parse("2006-01-02", *startDate)
 	}
 
 	srv, err := initCalendar(config.SecretFile)
 	if err != nil {
 		log.Fatalf("Unable to initialise calendar client: %v", err)
 	}
+
 	// Stash today's oncaller for future reference (may be empty)
-	oncaller := getOncallByDay(srv, time.Now()).Victim
+	oncall.Days[dateFormat(time.Now())] = getOncallByDay(srv, time.Now())
+	todayOncaller := oncall.Days[dateFormat(time.Now())].Victim
 
 	// Generate the monitoring file if that's all we need to do.
 	if *monitorFile != "" {
-		err := writeMonitoringFile(oncaller, config.Oncallers, *monitorFile)
+		err := writeMonitoringFile(todayOncaller.Code, config.Oncallers, *monitorFile)
 		if err != nil {
 			fmt.Printf("Monitoring file creation failed: %s", err)
 			os.Exit(1)
@@ -252,67 +155,86 @@ func main() {
 		os.Exit(0)
 	}
 
-	srvOncall := getOncallByDay(srv, firstDate).Victim
+	// Default to 30 days unless overridden
+	daysToRotate := 30
+	if *generateDays > 0 {
+		daysToRotate = *generateDays
+	} else if config.GenerateDays != 0 {
+		daysToRotate = config.GenerateDays
+	}
+
+	// Load the existing rotation in advance (we'll need it all anyway)
+	firstOfMonth, daysToFetch := getMonthRange(firstDate, daysToRotate)
+
+	if *flagDebug {
+		fmt.Printf("Prefetching %d days...", daysToFetch)
+	}
+	for x := -1; x <= daysToFetch+1; x++ {
+		day := firstOfMonth.AddDate(0, 0, x)
+		oncall.Days[dateFormat(day)] = getOncallByDay(srv, day)
+	}
+	if *flagDebug {
+		fmt.Printf("done\n")
+	}
+
+	// get day-1 oncall to prime the rotation
 
 	if *lastOn != "" {
-		lastOncall = *lastOn
-	} else if srvOncall != "" {
-		lastOncall = srvOncall
+		lastOncall = oncallersByCode[*lastOn]
+	} else if oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim.Code != "" {
+		lastOncall = oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim
+		if *flagDebug {
+			fmt.Printf("Yesterday's oncall (starting point) was: %s\n", lastOncall.Code)
+		}
 	} else {
-		lastOncall = oncallersByOrder[0].Code
+		lastOncall = oncallersByOrder[0]
 	}
 
-	// Default to 30 days unless overridden
-	days := 30
-	if *generateDays > 0 {
-		days = *generateDays
-	} else if config.GenerateDays != 0 {
-		days = config.GenerateDays
-	}
-
-	for x := 1; x < days+1; x++ {
-		today := firstDate.AddDate(0, 0, x)
+	for x := 0; x < daysToRotate; x++ {
+		day := firstDate.AddDate(0, 0, x)
 		workday := true
 		hols := austria.GetHolidays()
 
-		if (holidays.CheckIsBusinessDay(today, hols) == false) &&
-			(holidays.CheckIsBusinessDay(today.AddDate(0, 0, -1), hols) == false) {
+		if (holidays.CheckIsBusinessDay(day, hols) == false) &&
+			(holidays.CheckIsBusinessDay(day.AddDate(0, 0, -1), hols) == false) {
 			workday = false
 		}
 
-		unavailable, err := checkAvailability(srv, today)
+		unavailable, err := checkAvailability(srv, day)
 		if err != nil {
 			log.Fatalf("Unable to read calendar events: %v", err)
 		}
 
 		// check to see if there's a fixed entry - if so, skip from here
-		fixcheck := getOncallByDay(srv, today)
+		fixcheck := oncall.Days[dateFormat(day)]
 		if fixcheck.Fixed == true {
 			lastOncall = fixcheck.Victim
 			if *flagVerbose == true {
 				fmt.Printf("%s: %s # Fixed,Out: %s\n",
-					today.Format("Mon 2006-01-02"),
-					fixcheck.Victim,
+					day.Format("Mon 2006-01-02"),
+					fixcheck.Victim.Code,
 					strings.Join(unavailable, ","))
 			}
 			continue
 		}
 
-		todayOncall := findNextOncall(unavailable, lastOncall, workday)
+		dayOncall := findNextOncall(unavailable, lastOncall, workday)
 		if *flagVerbose == true {
 			fmt.Printf("%s: %s # Out: %s\n",
-				today.Format("Mon 2006-01-02"),
-				todayOncall.Code,
+				day.Format("Mon 2006-01-02"),
+				dayOncall.Code,
 				strings.Join(unavailable, ","))
 		}
-		setOncallByDay(srv, today, todayOncall)
-		lastOncall = todayOncall.Code
+
+		oncall.Days[dateFormat(day)] = &oncallDay{dayOncall, false}
+		setOncallByDay(srv, day, dayOncall)
+		lastOncall = dayOncall
 	}
 
 	// Check to see if today's oncaller has changed
-	if oncaller != getOncallByDay(srv, time.Now()).Victim {
+	if todayOncaller != oncall.Days[dateFormat(time.Now())].Victim {
 		// Notify the new oncaller
-		err := doNotify(getOncallByDay(srv, time.Now()).Victim, "emergency")
+		err := doNotify(oncall.Days[dateFormat(time.Now())].Victim, "emergency")
 		if err != nil {
 			fmt.Printf("Error sending mail: %s\n", err)
 		}
@@ -322,9 +244,9 @@ func main() {
 	var notifyresult error
 	switch *notifyVictim {
 	case "today":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now()).Victim, "today")
+		notifyresult = doNotify(oncall.Days[dateFormat(time.Now())].Victim, "today")
 	case "tomorrow":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now().AddDate(0, 0, 1)).Victim, "tomorrow")
+		notifyresult = doNotify(oncall.Days[dateFormat(time.Now().AddDate(0, 0, 1))].Victim, "tomorrow")
 	}
 	if notifyresult != nil {
 		fmt.Printf("Error sending mail: %s\n", notifyresult)
