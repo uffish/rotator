@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type Mail struct {
+type message struct {
 	Destination string
 	Body        []string
 	Subject     string
@@ -21,7 +21,7 @@ func doNotify(victim string, when string) error {
 	address := ""
 	slackID := ""
 	var err error
-	var mail Mail
+	var mail message
 	emergency := false
 
 	d := time.Now()
@@ -85,7 +85,7 @@ func doNotify(victim string, when string) error {
 	return err
 }
 
-func mailSend(mail Mail, server string) error {
+func mailSend(mail message, server string) error {
 
 	if mail.Sender == "" {
 		u, _ := user.Current()
