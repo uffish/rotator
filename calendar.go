@@ -82,7 +82,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
 	for day := 0; day < daysinmonth; day++ {
 		nextday := firstday.AddDate(0, 0, day)
-		oncall := getOncallByDay(srv, nextday)
+		oncall := oncallDaySet[nextday]
 		if oncall.Victim == "" {
 			continue
 		}
@@ -189,7 +189,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 
 	oncall := victim.Code
 
-	existing := getOncallByDay(srv, day)
+	existing := oncallDaySet[day]
 	if existing.Victim == oncall || existing.Fixed == true {
 		// Nothing to do except increment their load counter if we reset it
 		if *flagUnrestrict == true && existing.Fixed == false {

@@ -54,9 +54,10 @@ type Config struct {
 var config Config
 var oncallersByCode map[string]oncallPerson
 var oncallersByOrder map[int]oncallPerson
+var oncallDaySet map[time.Time]oncallDay
 var restrictions allRestrictions
 var oncallerShadow oncallPerson
-var holiday_re *regexp.Regexp;
+var holidayRE *regexp.Regexp
 
 var (
 	startDate      = flag.String("startdate", "", "Start date (YYYY-MM-DD) for rota generation")
@@ -101,6 +102,8 @@ func init() {
 		oncallersByCode[person.Code] = person
 	}
 
+  oncallDaySet = make(map[time.Time]oncallDay)
+  
 	// If only OncallCalendar is specified, assume the same calendar should
 	// be used for availability information.
 	if config.OncallCalendar != "" && config.AvailabilityCalendar == "" {
@@ -113,7 +116,7 @@ func init() {
 	} else {
 		awaywords = "away|urlaub|krank|vacation|leave|familienzeit|za"
 	}
-	holiday_re = regexp.MustCompile(`(?i)(\w{2,3})[\s-]+(` + awaywords + `)`)
+	holidayRE = regexp.MustCompile(`(?i)(\w{2,3})[\s-]+(` + awaywords + `)`)
 }
 
 func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
@@ -154,7 +157,7 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 			// Only look for all-day events (these have no associated time, just a date)
 			if e.Start.DateTime == "" {
 				title := e.Summary
-				match := holiday_re.FindStringSubmatch(title)
+				match := holidayRE.FindStringSubmatch(title)
 				if match == nil {
 					continue
 				}
@@ -264,6 +267,12 @@ func main() {
 		days = config.GenerateDays
 	}
 
+  // Load the existing rotation in advance (we'll need it all anyway)
+  for x := 1; x < days+1; x++ {
+    day := firstDate.AddDate(0, 0, x)
+    oncallDaySet[day] = getOncallByDay(srv, day)
+  }
+  
 	for x := 1; x < days+1; x++ {
 		today := firstDate.AddDate(0, 0, x)
 		workday := true
@@ -280,7 +289,7 @@ func main() {
 		}
 
 		// check to see if there's a fixed entry - if so, skip from here
-		fixcheck := getOncallByDay(srv, today)
+		fixcheck := oncallDaySet[today]
 		if fixcheck.Fixed == true {
 			lastOncall = fixcheck.Victim
 			if *flagVerbose == true {
@@ -318,7 +327,7 @@ func main() {
 	case "today":
 		notifyresult = doNotify(getOncallByDay(srv, time.Now()).Victim, "today")
 	case "tomorrow":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now().AddDate(0, 0, 1)).Victim, "tomorrow")
+		notifyresult = doNotify(getOncallByDay(srv, time.Now().AddDate(0, 0, 1).Victim, "tomorrow")
 	}
 	if notifyresult != nil {
 		fmt.Printf("Error sending mail: %s\n", notifyresult)
