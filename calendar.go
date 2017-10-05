@@ -20,14 +20,20 @@ import (
 	"google.golang.org/api/calendar/v3"
 )
 
-type OncallDay struct {
+type oncallDay struct {
 	Victim string
 	Fixed  bool
 }
 
-type Restriction struct {
+type restriction struct {
 	DaysBooked     int
 	WeekendsBooked int
+}
+
+type allRestrictions struct {
+	Month  time.Month
+	Year   int
+	Detail map[string]*restriction
 }
 
 // getClient uses a Context and Config to retrieve a Token
@@ -57,12 +63,12 @@ func getDayEvents(srv *calendar.Service, day time.Time) ([]*calendar.Event, erro
 	return events.Items, err
 }
 
-func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[string]*Restriction {
-	res := make(map[string]*Restriction)
-	res[oncallerShadow.Code] = &Restriction{-31, -31}
+func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[string]*restriction {
+	res := make(map[string]*restriction)
+	res[oncallerShadow.Code] = &restriction{-31, -31}
 
 	for _, person := range config.Oncallers {
-		res[person.Code] = &Restriction{0, 0}
+		res[person.Code] = &restriction{0, 0}
 	}
 
 	if *flagUnrestrict {
@@ -103,7 +109,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 }
 
 // Find the person in the oncall calendar for a given day.
-func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
+func getOncallByDay(srv *calendar.Service, day time.Time) oncallDay {
 	// Returns: [full match, code, -fix]
 	oncallRe := regexp.MustCompile(`(?i)(\w{2,3}).*onduty(-fix)?`)
 	fixed := false
@@ -129,13 +135,13 @@ func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
 					if match[2] != "" {
 						fixed = true
 					}
-					return OncallDay{strings.ToLower(match[1]), fixed}
+					return oncallDay{strings.ToLower(match[1]), fixed}
 				}
 			}
 		}
 	}
 	// If nobody was oncall..
-	return OncallDay{"", false}
+	return oncallDay{"", false}
 }
 
 // getTokenFromWeb uses Config to request a Token.

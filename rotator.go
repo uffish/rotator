@@ -30,7 +30,7 @@ type oncallPerson struct {
 	SlackID       string
 }
 
-// mostly self-explanatory, although:
+// Config is mostly self-explanatory, although:
 // MaxDaysPerMonth: Maximum days per month an individual may be oncall
 // MaxWeekendsPerMonth: No more than this number of weekends/month/person
 // ShadowOncaller: Will be listed as oncall if no oncaller can be found
@@ -51,18 +51,12 @@ type Config struct {
 	Oncallers            []oncallPerson
 }
 
-type Restrictions struct {
-	Month  time.Month
-	Year   int
-	Detail map[string]*Restriction
-}
-
 var config Config
 var oncallersByCode map[string]oncallPerson
 var oncallersByOrder map[int]oncallPerson
-var restrictions Restrictions
+var restrictions allRestrictions
 var oncallerShadow oncallPerson
-var holiday_re *regexp.Regexp
+var holiday_re *regexp.Regexp;
 
 var (
 	startDate      = flag.String("startdate", "", "Start date (YYYY-MM-DD) for rota generation")
