@@ -1,7 +1,5 @@
 package main
 
-// add pithy comment here and remove it again
-
 import (
 	"flag"
 	"fmt"
@@ -51,6 +49,11 @@ type Config struct {
 	ShadowOncaller       string
 	AwayWords            []string
 	Oncallers            []oncallPerson
+}
+
+type oncallDay struct {
+	Victim string
+	Fixed  bool
 }
 
 type oncallDaySet struct {
@@ -144,7 +147,7 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 
 		for k, v := range restrictions.Detail {
 			// skip this if they're already oncall today, to avoid double-counting
-			todayOncall := getOncallByDay(srv, day)
+			todayOncall := oncall.Days[dateFormat(day)]
 			if todayOncall.Victim == k {
 				continue
 			}
@@ -254,32 +257,43 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Default to 30 days unless overridden
+	daysToRotate := 30
+	if *generateDays > 0 {
+		daysToRotate = *generateDays
+	} else if config.GenerateDays != 0 {
+		daysToRotate = config.GenerateDays
+	}
+
+	// Load the existing rotation in advance (we'll need it all anyway)
+	firstOfMonth, daysToFetch := getMonthRange(firstDate, daysToRotate)
+
+	if *flagDebug {
+		fmt.Printf("Prefetching %d days...", daysToFetch)
+	}
+	for x := -1; x <= daysToFetch+1; x++ {
+		day := firstOfMonth.AddDate(0, 0, x)
+		oncall.Days[dateFormat(day)] = getOncallByDay(srv, day)
+	}
+	if *flagDebug {
+		fmt.Printf("done\n")
+	}
+
 	// get day-1 oncall to prime the rotation
-	srvOncall := getOncallByDay(srv, firstDate.AddDate(0, 0, -1)).Victim
 
 	if *lastOn != "" {
 		lastOncall = *lastOn
-	} else if srvOncall != "" {
-		lastOncall = srvOncall
+	} else if oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim != "" {
+		lastOncall = oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim
+		if *flagDebug {
+			fmt.Println(firstDate.AddDate(0, 0, -1))
+			fmt.Printf("Yesterday's oncall was: %s", lastOncall)
+		}
 	} else {
 		lastOncall = oncallersByOrder[0].Code
 	}
 
-	// Default to 30 days unless overridden
-	days := 30
-	if *generateDays > 0 {
-		days = *generateDays
-	} else if config.GenerateDays != 0 {
-		days = config.GenerateDays
-	}
-
-	// Load the existing rotation in advance (we'll need it all anyway)
-	for x := 0; x <= days; x++ {
-		day := firstDate.AddDate(0, 0, x)
-		oncall.Days[dateFormat(day)] = getOncallByDay(srv, day)
-	}
-
-	for x := 0; x < days; x++ {
+	for x := 0; x < daysToRotate; x++ {
 		day := firstDate.AddDate(0, 0, x)
 		workday := true
 		hols := austria.GetHolidays()
@@ -319,9 +333,9 @@ func main() {
 	}
 
 	// Check to see if today's oncaller has changed
-	if todayOncaller != getOncallByDay(srv, time.Now()).Victim {
+	if todayOncaller != oncall.Days[dateFormat(time.Now())].Victim {
 		// Notify the new oncaller
-		err := doNotify(getOncallByDay(srv, time.Now()).Victim, "emergency")
+		err := doNotify(oncall.Days[dateFormat(time.Now())].Victim, "emergency")
 		if err != nil {
 			fmt.Printf("Error sending mail: %s\n", err)
 		}
@@ -331,9 +345,9 @@ func main() {
 	var notifyresult error
 	switch *notifyVictim {
 	case "today":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now()).Victim, "today")
+		notifyresult = doNotify(oncall.Days[dateFormat(time.Now())].Victim, "today")
 	case "tomorrow":
-		notifyresult = doNotify(getOncallByDay(srv, time.Now().AddDate(0, 0, 1)).Victim, "tomorrow")
+		notifyresult = doNotify(oncall.Days[dateFormat(time.Now().AddDate(0, 0, 1))].Victim, "tomorrow")
 	}
 	if notifyresult != nil {
 		fmt.Printf("Error sending mail: %s\n", notifyresult)

@@ -20,11 +20,6 @@ import (
 	"google.golang.org/api/calendar/v3"
 )
 
-type oncallDay struct {
-	Victim string
-	Fixed  bool
-}
-
 type restriction struct {
 	DaysBooked     int
 	WeekendsBooked int
@@ -68,6 +63,13 @@ func getDayEvents(srv *calendar.Service, day time.Time) ([]*calendar.Event, erro
 	return events.Items, err
 }
 
+func getMonthRange(dayOne time.Time, dayCount int) (time.Time, int) {
+	firstDay := time.Date(dayOne.Year(), dayOne.Month(), 1, 0, 0, 0, 0, time.UTC)
+	lastDay := dayOne.AddDate(0, 0, dayCount)
+	lastMonthDay := time.Date(lastDay.Year(), lastDay.Month()+1, 0, 0, 0, 0, 0, time.UTC)
+	return firstDay, int(lastMonthDay.Sub(firstDay) / (time.Hour * 24))
+}
+
 func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[string]*restriction {
 	res := make(map[string]*restriction)
 	res[oncallerShadow.Code] = &restriction{-31, -31}
@@ -82,9 +84,9 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 	}
 
 	// FIXME horrible time zone handling here - needs a general solution
-	firstday := time.Date(month.Year(), month.Month(), 1, 3, 0, 0, 0, time.Local)
+	firstday := time.Date(month.Year(), month.Month(), 1, 3, 0, 0, 0, time.UTC)
 	// why does this work? because day 0 of a month is the last day of month-1!
-	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	for day := 0; day < daysinmonth; day++ {
 		nextday := firstday.AddDate(0, 0, day)
 		oncall := oncall.Days[dateFormat(nextday)]
