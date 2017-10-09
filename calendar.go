@@ -30,10 +30,15 @@ type restriction struct {
 	WeekendsBooked int
 }
 
-type allRestrictions struct {
+type restrictionSet struct {
 	Month  time.Month
 	Year   int
 	Detail map[string]*restriction
+}
+
+func dateFormat(day time.Time) string {
+	timeParse := "2006-01-02"
+	return day.Format(timeParse)
 }
 
 // getClient uses a Context and Config to retrieve a Token
@@ -82,7 +87,7 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
 	for day := 0; day < daysinmonth; day++ {
 		nextday := firstday.AddDate(0, 0, day)
-		oncall := oncallDaySet[nextday]
+		oncall := oncall.Days[dateFormat(nextday)]
 		if oncall.Victim == "" {
 			continue
 		}
@@ -187,10 +192,10 @@ func makeAttendees(people []oncallPerson) []*calendar.EventAttendee {
 func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) bool {
 	// Get existing oncall for day
 
-	oncall := victim.Code
+	existingOncall := victim.Code
 
-	existing := oncallDaySet[day]
-	if existing.Victim == oncall || existing.Fixed == true {
+	existing := oncall.Days[dateFormat(day)]
+	if existing.Victim == existingOncall || existing.Fixed == true {
 		// Nothing to do except increment their load counter if we reset it
 		if *flagUnrestrict == true && existing.Fixed == false {
 			restrictions.Detail[victim.Code].DaysBooked++
@@ -224,7 +229,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 			} else {
 				eventAttendees := makeAttendees([]oncallPerson{victim})
 				event.Attendees = eventAttendees
-				event.Summary = fmt.Sprintf("%s onduty", oncall)
+				event.Summary = fmt.Sprintf("%s onduty", existingOncall)
 				if *flagDryRun == false {
 					_, err := srv.Events.Update(config.OncallCalendar, event.Id, event).Do()
 					if err != nil {
@@ -244,7 +249,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 		eventAttendees := makeAttendees([]oncallPerson{victim})
 		newEvent := calendar.Event{
 			Attendees: eventAttendees,
-			Summary:   fmt.Sprintf("%s onduty", oncall),
+			Summary:   fmt.Sprintf("%s onduty", existingOncall),
 			Start:     &calendar.EventDateTime{Date: starttime.Format("2006-01-02")},
 			End:       &calendar.EventDateTime{Date: starttime.AddDate(0, 0, 1).Format("2006-01-02")},
 		}

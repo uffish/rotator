@@ -1,5 +1,7 @@
 package main
 
+// add pithy comment here and remove it again
+
 import (
 	"flag"
 	"fmt"
@@ -51,11 +53,15 @@ type Config struct {
 	Oncallers            []oncallPerson
 }
 
+type oncallDaySet struct {
+	Days map[string]oncallDay
+}
+
 var config Config
 var oncallersByCode map[string]oncallPerson
 var oncallersByOrder map[int]oncallPerson
-var oncallDaySet map[time.Time]oncallDay
-var restrictions allRestrictions
+var oncall oncallDaySet
+var restrictions restrictionSet
 var oncallerShadow oncallPerson
 var holidayRE *regexp.Regexp
 
@@ -102,7 +108,7 @@ func init() {
 		oncallersByCode[person.Code] = person
 	}
 
-	oncallDaySet = make(map[time.Time]oncallDay)
+	oncall.Days = make(map[string]oncallDay)
 
 	// If only OncallCalendar is specified, assume the same calendar should
 	// be used for availability information.
@@ -222,14 +228,13 @@ func findNextOncall(unavailable []string, lastOncall string,
 
 func main() {
 
-	timeParse := "2006-01-02"
 	var firstDate time.Time
 	var lastOncall string
 
 	if *startDate == "" {
-		firstDate = time.Now().AddDate(0, 0, -1)
+		firstDate = time.Now()
 	} else {
-		firstDate, _ = time.Parse(timeParse, *startDate)
+		firstDate, _ = time.Parse("2006-01-02", *startDate)
 	}
 
 	srv, err := initCalendar(config.SecretFile)
@@ -237,11 +242,11 @@ func main() {
 		log.Fatalf("Unable to initialise calendar client: %v", err)
 	}
 	// Stash today's oncaller for future reference (may be empty)
-	oncaller := getOncallByDay(srv, time.Now()).Victim
+	todayOncaller := getOncallByDay(srv, time.Now()).Victim
 
 	// Generate the monitoring file if that's all we need to do.
 	if *monitorFile != "" {
-		err := writeMonitoringFile(oncaller, config.Oncallers, *monitorFile)
+		err := writeMonitoringFile(todayOncaller, config.Oncallers, *monitorFile)
 		if err != nil {
 			fmt.Printf("Monitoring file creation failed: %s", err)
 			os.Exit(1)
@@ -249,7 +254,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	srvOncall := getOncallByDay(srv, firstDate).Victim
+	// get day-1 oncall to prime the rotation
+	srvOncall := getOncallByDay(srv, firstDate.AddDate(0, 0, -1)).Victim
 
 	if *lastOn != "" {
 		lastOncall = *lastOn
@@ -268,52 +274,52 @@ func main() {
 	}
 
 	// Load the existing rotation in advance (we'll need it all anyway)
-	for x := 1; x < days+1; x++ {
+	for x := 0; x <= days; x++ {
 		day := firstDate.AddDate(0, 0, x)
-		oncallDaySet[day] = getOncallByDay(srv, day)
+		oncall.Days[dateFormat(day)] = getOncallByDay(srv, day)
 	}
 
-	for x := 1; x < days+1; x++ {
-		today := firstDate.AddDate(0, 0, x)
+	for x := 0; x < days; x++ {
+		day := firstDate.AddDate(0, 0, x)
 		workday := true
 		hols := austria.GetHolidays()
 
-		if (holidays.CheckIsBusinessDay(today, hols) == false) &&
-			(holidays.CheckIsBusinessDay(today.AddDate(0, 0, -1), hols) == false) {
+		if (holidays.CheckIsBusinessDay(day, hols) == false) &&
+			(holidays.CheckIsBusinessDay(day.AddDate(0, 0, -1), hols) == false) {
 			workday = false
 		}
 
-		unavailable, err := checkAvailability(srv, today)
+		unavailable, err := checkAvailability(srv, day)
 		if err != nil {
 			log.Fatalf("Unable to read calendar events: %v", err)
 		}
 
 		// check to see if there's a fixed entry - if so, skip from here
-		fixcheck := oncallDaySet[today]
+		fixcheck := oncall.Days[dateFormat(day)]
 		if fixcheck.Fixed == true {
 			lastOncall = fixcheck.Victim
 			if *flagVerbose == true {
 				fmt.Printf("%s: %s # Fixed,Out: %s\n",
-					today.Format("Mon 2006-01-02"),
+					day.Format("Mon 2006-01-02"),
 					fixcheck.Victim,
 					strings.Join(unavailable, ","))
 			}
 			continue
 		}
 
-		todayOncall := findNextOncall(unavailable, lastOncall, workday)
+		dayOncall := findNextOncall(unavailable, lastOncall, workday)
 		if *flagVerbose == true {
 			fmt.Printf("%s: %s # Out: %s\n",
-				today.Format("Mon 2006-01-02"),
-				todayOncall.Code,
+				day.Format("Mon 2006-01-02"),
+				dayOncall.Code,
 				strings.Join(unavailable, ","))
 		}
-		setOncallByDay(srv, today, todayOncall)
-		lastOncall = todayOncall.Code
+		setOncallByDay(srv, day, dayOncall)
+		lastOncall = dayOncall.Code
 	}
 
 	// Check to see if today's oncaller has changed
-	if oncaller != getOncallByDay(srv, time.Now()).Victim {
+	if todayOncaller != getOncallByDay(srv, time.Now()).Victim {
 		// Notify the new oncaller
 		err := doNotify(getOncallByDay(srv, time.Now()).Victim, "emergency")
 		if err != nil {
