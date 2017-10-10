@@ -20,14 +20,9 @@ import (
 	"google.golang.org/api/calendar/v3"
 )
 
-type OncallDay struct {
-	Victim string
-	Fixed  bool
-}
-
-type Restriction struct {
-	DaysBooked     int
-	WeekendsBooked int
+func dateFormat(day time.Time) string {
+	timeParse := "2006-01-02"
+	return day.Format(timeParse)
 }
 
 // getClient uses a Context and Config to retrieve a Token
@@ -57,12 +52,19 @@ func getDayEvents(srv *calendar.Service, day time.Time) ([]*calendar.Event, erro
 	return events.Items, err
 }
 
-func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[string]*Restriction {
-	res := make(map[string]*Restriction)
-	res[oncallerShadow.Code] = &Restriction{-31, -31}
+func getMonthRange(dayOne time.Time, dayCount int) (time.Time, int) {
+	firstDay := time.Date(dayOne.Year(), dayOne.Month(), 1, 0, 0, 0, 0, time.UTC)
+	lastDay := dayOne.AddDate(0, 0, dayCount)
+	lastMonthDay := time.Date(lastDay.Year(), lastDay.Month()+1, 0, 0, 0, 0, 0, time.UTC)
+	return firstDay, int(lastMonthDay.Sub(firstDay) / (time.Hour * 24))
+}
+
+func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[string]*restriction {
+	res := make(map[string]*restriction)
+	res[oncallerShadow.Code] = &restriction{-31, -31}
 
 	for _, person := range config.Oncallers {
-		res[person.Code] = &Restriction{0, 0}
+		res[person.Code] = &restriction{0, 0}
 	}
 
 	if *flagUnrestrict {
@@ -71,22 +73,22 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 	}
 
 	// FIXME horrible time zone handling here - needs a general solution
-	firstday := time.Date(month.Year(), month.Month(), 1, 3, 0, 0, 0, time.Local)
+	firstday := time.Date(month.Year(), month.Month(), 1, 3, 0, 0, 0, time.UTC)
 	// why does this work? because day 0 of a month is the last day of month-1!
-	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+	daysinmonth := time.Date(month.Year(), month.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 	for day := 0; day < daysinmonth; day++ {
 		nextday := firstday.AddDate(0, 0, day)
-		oncall := getOncallByDay(srv, nextday)
-		if oncall.Victim == "" {
+		oncall := oncall.Days[dateFormat(nextday)]
+		if oncall.Victim.Code == "" {
 			continue
 		}
 
-		res[oncall.Victim].DaysBooked++
+		res[oncall.Victim.Code].DaysBooked++
 		if isWeekend(nextday) {
-			res[oncall.Victim].WeekendsBooked++
+			res[oncall.Victim.Code].WeekendsBooked++
 			// if day 1 is a Sunday, add 2 to avoid off-by-one errors later on...
 			if nextday.Weekday() == 0 && nextday.Day() == 1 {
-				res[oncall.Victim].WeekendsBooked++
+				res[oncall.Victim.Code].WeekendsBooked++
 			}
 		}
 		// if *Verbose {
@@ -103,8 +105,8 @@ func getOncallMonthRestrictions(srv *calendar.Service, month time.Time) map[stri
 }
 
 // Find the person in the oncall calendar for a given day.
-func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
-	// Returns: [full match, code, -fix]
+func getOncallByDay(srv *calendar.Service, day time.Time) *oncallDay {
+
 	oncallRe := regexp.MustCompile(`(?i)(\w{2,3}).*onduty(-fix)?`)
 	fixed := false
 	starttime := day.Truncate(time.Hour * 24).Add(time.Second)
@@ -129,13 +131,13 @@ func getOncallByDay(srv *calendar.Service, day time.Time) OncallDay {
 					if match[2] != "" {
 						fixed = true
 					}
-					return OncallDay{strings.ToLower(match[1]), fixed}
+					return &oncallDay{oncallersByCode[strings.ToLower(match[1])], fixed}
 				}
 			}
 		}
 	}
 	// If nobody was oncall..
-	return OncallDay{"", false}
+	return &oncallDay{oncallPerson{}, false}
 }
 
 // getTokenFromWeb uses Config to request a Token.
@@ -181,10 +183,10 @@ func makeAttendees(people []oncallPerson) []*calendar.EventAttendee {
 func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) bool {
 	// Get existing oncall for day
 
-	oncall := victim.Code
+	existingOncall := victim
 
-	existing := getOncallByDay(srv, day)
-	if existing.Victim == oncall || existing.Fixed == true {
+	existing := oncall.Days[dateFormat(day)]
+	if existing.Victim == existingOncall || existing.Fixed == true {
 		// Nothing to do except increment their load counter if we reset it
 		if *flagUnrestrict == true && existing.Fixed == false {
 			restrictions.Detail[victim.Code].DaysBooked++
@@ -218,7 +220,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 			} else {
 				eventAttendees := makeAttendees([]oncallPerson{victim})
 				event.Attendees = eventAttendees
-				event.Summary = fmt.Sprintf("%s onduty", oncall)
+				event.Summary = fmt.Sprintf("%s onduty", existingOncall.Code)
 				if *flagDryRun == false {
 					_, err := srv.Events.Update(config.OncallCalendar, event.Id, event).Do()
 					if err != nil {
@@ -228,7 +230,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 				if *flagVerbose {
 					fmt.Printf("%s is now oncall on %s (was %s)\n", victim.Code,
 						day.Format("2006-01-02"),
-						existing.Victim)
+						existing.Victim.Code)
 				}
 				rewritten = true
 			}
@@ -238,7 +240,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 		eventAttendees := makeAttendees([]oncallPerson{victim})
 		newEvent := calendar.Event{
 			Attendees: eventAttendees,
-			Summary:   fmt.Sprintf("%s onduty", oncall),
+			Summary:   fmt.Sprintf("%s onduty", existingOncall.Code),
 			Start:     &calendar.EventDateTime{Date: starttime.Format("2006-01-02")},
 			End:       &calendar.EventDateTime{Date: starttime.AddDate(0, 0, 1).Format("2006-01-02")},
 		}
@@ -257,9 +259,9 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 	}
 	// And decrement it if it was rewritten.
 	if rewritten {
-		restrictions.Detail[existing.Victim].DaysBooked--
+		restrictions.Detail[existing.Victim.Code].DaysBooked--
 		if isWeekend(day) {
-			restrictions.Detail[existing.Victim].WeekendsBooked--
+			restrictions.Detail[existing.Victim.Code].WeekendsBooked--
 		}
 	}
 	return true
