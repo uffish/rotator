@@ -286,8 +286,7 @@ func main() {
 	} else if oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim != "" {
 		lastOncall = oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim
 		if *flagDebug {
-			fmt.Println(firstDate.AddDate(0, 0, -1))
-			fmt.Printf("Yesterday's oncall was: %s", lastOncall)
+			fmt.Printf("Yesterday's oncall (starting point) was: %s\n", lastOncall)
 		}
 	} else {
 		lastOncall = oncallersByOrder[0].Code
@@ -328,6 +327,9 @@ func main() {
 				dayOncall.Code,
 				strings.Join(unavailable, ","))
 		}
+
+		// FIXME unravel pointers
+		// oncall.Days[dateFormat(day)].Victim = dayOncall
 		setOncallByDay(srv, day, dayOncall)
 		lastOncall = dayOncall.Code
 	}
