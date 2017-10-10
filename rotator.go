@@ -3,17 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/uffish/holidays"
 	"github.com/uffish/holidays/austria"
-	"gopkg.in/yaml.v1"
 )
 
 // Config is mostly self-explanatory, although:
@@ -93,16 +90,7 @@ var (
 func init() {
 	flag.Parse()
 
-	cfgfile, _ := filepath.Abs(*configFile)
-	yamlfile, err := ioutil.ReadFile(cfgfile)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = yaml.Unmarshal(yamlfile, &config)
-	if err != nil {
-		log.Panic(err)
-	}
+	config = unpackConfig(*configFile)
 
 	if config.ShadowOncaller != "" {
 		oncallerShadow.Code = config.ShadowOncaller
@@ -152,6 +140,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to initialise calendar client: %v", err)
 	}
+
 	// Stash today's oncaller for future reference (may be empty)
 	oncall.Days[dateFormat(time.Now())] = getOncallByDay(srv, time.Now())
 	todayOncaller := oncall.Days[dateFormat(time.Now())].Victim

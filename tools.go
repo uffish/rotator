@@ -2,11 +2,15 @@ package main
 
 import (
 	"fmt"
+  "io/ioutil"
+  "log"
   "math/rand"
+  "path/filepath"
 	"strings"
 	"time"
 
   "google.golang.org/api/calendar/v3"
+  "gopkg.in/yaml.v1"
 )
 
 func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
@@ -108,4 +112,20 @@ func findNextOncall(unavailable []string, lastOncall oncallPerson,
 	}
 	// And we're done.
 	return oncallersByOrder[nextIndex]
+}
+
+func unpackConfig(fn string) Config {
+  var c Config
+
+  cfgfile, _ := filepath.Abs(fn)
+  yamlfile, err := ioutil.ReadFile(cfgfile)
+  if err != nil {
+    log.Panic(err)
+  }
+
+  err = yaml.Unmarshal(yamlfile, &c)
+  if err != nil {
+    log.Panic(err)
+  }
+  return c
 }
