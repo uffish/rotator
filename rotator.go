@@ -18,18 +18,6 @@ import (
 	"gopkg.in/yaml.v1"
 )
 
-// Order: order in oncall sequence (0, 1, ...)
-// Code: 2-3 letter identification code (usually initials)
-// CalendarEmail: Google Calendar account email address
-// Email: email address for notifications.
-type oncallPerson struct {
-	Order         int
-	Code          string
-	CalendarEmail string
-	Email         string
-	SlackID       string
-}
-
 // Config is mostly self-explanatory, although:
 // MaxDaysPerMonth: Maximum days per month an individual may be oncall
 // MaxWeekendsPerMonth: No more than this number of weekends/month/person
@@ -52,12 +40,35 @@ type Config struct {
 }
 
 type oncallDay struct {
-	Victim string
+	Victim oncallPerson
 	Fixed  bool
 }
 
 type oncallDaySet struct {
-	Days map[string]oncallDay
+	Days map[string]*oncallDay
+}
+
+// Order: order in oncall sequence (0, 1, ...)
+// Code: 2-3 letter identification code (usually initials)
+// CalendarEmail: Google Calendar account email address
+// Email: email address for notifications.
+type oncallPerson struct {
+	Order         int
+	Code          string
+	CalendarEmail string
+	Email         string
+	SlackID       string
+}
+
+type restriction struct {
+	DaysBooked     int
+	WeekendsBooked int
+}
+
+type restrictionSet struct {
+	Month  time.Month
+	Year   int
+	Detail map[string]*restriction
 }
 
 var config Config
@@ -111,7 +122,7 @@ func init() {
 		oncallersByCode[person.Code] = person
 	}
 
-	oncall.Days = make(map[string]oncallDay)
+	oncall.Days = make(map[string]*oncallDay)
 
 	// If only OncallCalendar is specified, assume the same calendar should
 	// be used for availability information.
@@ -148,7 +159,7 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 		for k, v := range restrictions.Detail {
 			// skip this if they're already oncall today, to avoid double-counting
 			todayOncall := oncall.Days[dateFormat(day)]
-			if todayOncall.Victim == k {
+			if todayOncall.Victim.Code == k {
 				continue
 			}
 			if v.DaysBooked >= config.MaxDaysPerMonth ||
@@ -187,17 +198,17 @@ func checkAvailability(srv *calendar.Service, day time.Time) ([]string, error) {
 	return finallist, err
 }
 
-func findNextOncall(unavailable []string, lastOncall string,
+func findNextOncall(unavailable []string, lastOncall oncallPerson,
 	workday bool) oncallPerson {
 	var lastIndex int
 	nextIndex := -1
 
 	// find array index of lastOncall
-	if lastOncall == oncallerShadow.Code {
+	if lastOncall == oncallerShadow {
 		// A random guess is probably as good as any..
 		lastIndex = rand.Int() % len(oncallersByOrder)
 	} else {
-		lastIndex = oncallersByCode[lastOncall].Order
+		lastIndex = oncallersByCode[lastOncall.Code].Order
 	}
 
 	// If it's a holiday, default to the same person as yesterday
@@ -232,7 +243,7 @@ func findNextOncall(unavailable []string, lastOncall string,
 func main() {
 
 	var firstDate time.Time
-	var lastOncall string
+	var lastOncall oncallPerson
 
 	if *startDate == "" {
 		firstDate = time.Now()
@@ -245,11 +256,12 @@ func main() {
 		log.Fatalf("Unable to initialise calendar client: %v", err)
 	}
 	// Stash today's oncaller for future reference (may be empty)
-	todayOncaller := getOncallByDay(srv, time.Now()).Victim
+	oncall.Days[dateFormat(time.Now())] = getOncallByDay(srv, time.Now())
+	todayOncaller := oncall.Days[dateFormat(time.Now())].Victim
 
 	// Generate the monitoring file if that's all we need to do.
 	if *monitorFile != "" {
-		err := writeMonitoringFile(todayOncaller, config.Oncallers, *monitorFile)
+		err := writeMonitoringFile(todayOncaller.Code, config.Oncallers, *monitorFile)
 		if err != nil {
 			fmt.Printf("Monitoring file creation failed: %s", err)
 			os.Exit(1)
@@ -282,14 +294,14 @@ func main() {
 	// get day-1 oncall to prime the rotation
 
 	if *lastOn != "" {
-		lastOncall = *lastOn
-	} else if oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim != "" {
+		lastOncall = oncallersByCode[*lastOn]
+	} else if oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim.Code != "" {
 		lastOncall = oncall.Days[dateFormat(firstDate.AddDate(0, 0, -1))].Victim
 		if *flagDebug {
-			fmt.Printf("Yesterday's oncall (starting point) was: %s\n", lastOncall)
+			fmt.Printf("Yesterday's oncall (starting point) was: %s\n", lastOncall.Code)
 		}
 	} else {
-		lastOncall = oncallersByOrder[0].Code
+		lastOncall = oncallersByOrder[0]
 	}
 
 	for x := 0; x < daysToRotate; x++ {
@@ -314,7 +326,7 @@ func main() {
 			if *flagVerbose == true {
 				fmt.Printf("%s: %s # Fixed,Out: %s\n",
 					day.Format("Mon 2006-01-02"),
-					fixcheck.Victim,
+					fixcheck.Victim.Code,
 					strings.Join(unavailable, ","))
 			}
 			continue
@@ -329,9 +341,9 @@ func main() {
 		}
 
 		// FIXME unravel pointers
-		// oncall.Days[dateFormat(day)].Victim = dayOncall
+		oncall.Days[dateFormat(day)] = &oncallDay{dayOncall, false}
 		setOncallByDay(srv, day, dayOncall)
-		lastOncall = dayOncall.Code
+		lastOncall = dayOncall
 	}
 
 	// Check to see if today's oncaller has changed
