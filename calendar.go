@@ -183,10 +183,8 @@ func makeAttendees(people []oncallPerson) []*calendar.EventAttendee {
 func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) bool {
 	// Get existing oncall for day
 
-	existingOncall := victim
-
 	existing := oncall.Days[dateFormat(day)]
-	if existing.Victim == existingOncall || existing.Fixed == true {
+	if existing.Victim.Code == victim.Code || existing.Fixed == true {
 		// Nothing to do except increment their load counter if we reset it
 		if *flagUnrestrict == true && existing.Fixed == false {
 			restrictions.Detail[victim.Code].DaysBooked++
@@ -220,7 +218,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 			} else {
 				eventAttendees := makeAttendees([]oncallPerson{victim})
 				event.Attendees = eventAttendees
-				event.Summary = fmt.Sprintf("%s onduty", existingOncall.Code)
+				event.Summary = fmt.Sprintf("%s onduty", victim.Code)
 				if *flagDryRun == false {
 					_, err := srv.Events.Update(config.OncallCalendar, event.Id, event).Do()
 					if err != nil {
@@ -240,7 +238,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 		eventAttendees := makeAttendees([]oncallPerson{victim})
 		newEvent := calendar.Event{
 			Attendees: eventAttendees,
-			Summary:   fmt.Sprintf("%s onduty", existingOncall.Code),
+			Summary:   fmt.Sprintf("%s onduty", victim.Code),
 			Start:     &calendar.EventDateTime{Date: starttime.Format("2006-01-02")},
 			End:       &calendar.EventDateTime{Date: starttime.AddDate(0, 0, 1).Format("2006-01-02")},
 		}

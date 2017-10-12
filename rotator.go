@@ -226,8 +226,8 @@ func main() {
 				strings.Join(unavailable, ","))
 		}
 
-		oncall.Days[dateFormat(day)] = &oncallDay{dayOncall, false}
 		setOncallByDay(srv, day, dayOncall)
+		oncall.Days[dateFormat(day)] = &oncallDay{dayOncall, false}
 		lastOncall = dayOncall
 	}
 
