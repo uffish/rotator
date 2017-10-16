@@ -6,8 +6,10 @@ import (
 	"github.com/nlopes/slack"
 )
 
-func notifySlack(message string, destination string) {
+func doSlackNotify(message string, destination string) err error {
 
+  var err error
+  
 	slackAPI := slack.New(config.SlackKey)
 	params := slack.PostMessageParameters{}
 	/* attach := slack.Attachment{
@@ -23,7 +25,10 @@ func notifySlack(message string, destination string) {
 	c, timestamp, err := slackAPI.PostMessage(channel, message, params)
 	if err != nil {
 		fmt.Printf("%s\n", err)
-		return
+		return err
 	}
-	fmt.Printf("Message sent to channel %s at %s", c, timestamp)
+	if *flagDebug {
+	  fmt.Printf("Message sent to channel %s at %s", c, timestamp)
+	}
+	return err
 }

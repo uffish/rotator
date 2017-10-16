@@ -81,6 +81,7 @@ var (
 	configFile     = flag.String("configfile", "rotator.yaml", "Where to look for config file")
 	monitorFile    = flag.String("monitoring.file", "", "If set, write monitoring status to file and exit.")
 	notifyVictim   = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
+	notifySlack    = flag.Bool("slack", false, "Send Slack notifications to/of the current oncaller.")
 	flagDebug      = flag.Bool("d", false, "Print spammy debugging information")
 	flagVerbose    = flag.Bool("v", false, "Be a bit more verbose")
 	flagDryRun     = flag.Bool("dry_run", false, "Don't actually write any calendar entries")
@@ -231,16 +232,36 @@ func main() {
 		lastOncall = dayOncall
 	}
 
+  nowOncaller := oncall.Days[dateFormat(time.Now())].Victim
+  
 	// Check to see if today's oncaller has changed
-	if todayOncaller != oncall.Days[dateFormat(time.Now())].Victim {
+	if todayOncaller.Code != nowOncaller.Code {
 		// Notify the new oncaller
-		err := doNotify(oncall.Days[dateFormat(time.Now())].Victim, "emergency")
+		err := doNotify(nowOncaller, "emergency")
 		if err != nil {
 			fmt.Printf("Error sending mail: %s\n", err)
 		}
 	}
 
+  // Send Slack notifications if it's called for. First to channel, then to the oncaller.
+  message := fmt.Sprintf("Hello! This is to let you know that %s is now oncall.",
+                         nowOncaller.Code)
+
+  if *notifySlack && config.SlackKey {
+    err := doSlackNotify(message, config.SlackKey)
+    if err != nil {
+			fmt.Printf("Error sending Slack notification: %s\n", err)
+		}
+  }
+
+  if *notifySlack && nowOncaller.SlackID] {
+    err := doSlackNotify(message, nowOncaller.SlackID)
+		if err != nil {
+  		fmt.Printf("Error sending Slack notification: %s\n", err)
+		}
+  }
 	// Finally, notify current (or next) victim if required.
+	
 	var notifyresult error
 	switch *notifyVictim {
 	case "today":
