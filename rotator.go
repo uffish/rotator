@@ -27,6 +27,7 @@ type Config struct {
 	MailSender           string
 	AvailabilityCalendar string
 	OncallCalendar       string
+	SlackEmergency       bool // Send Slack notification if the oncaller changes
 	SlackKey             string
 	SlackChannel         string
 	ShadowOncaller       string
@@ -240,6 +241,16 @@ func main() {
 		err := doNotify(nowOncaller, "emergency")
 		if err != nil {
 			fmt.Printf("Error sending mail: %s\n", err)
+		}
+		if config.SlackEmergency && config.SlackChannel != "" {
+			// alert people via slack as well
+			message := fmt.Sprintf("ONCALL CHANGE: %s is now on duty (was %s).",
+				nowOncaller.Code,
+				todayOncaller.Code)
+			err := doSlackNotify(message, config.SlackChannel)
+			if err != nil {
+				fmt.Printf("Error sending Slack notification: %s\n", err)
+			}
 		}
 	}
 
