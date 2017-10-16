@@ -6,8 +6,7 @@ import (
 	"github.com/nlopes/slack"
 )
 
-func doSlackNotify(message string, destination string) err error {
-
+func doSlackNotify(message string, destination string) error {
   var err error
   
 	slackAPI := slack.New(config.SlackKey)
