@@ -232,8 +232,8 @@ func main() {
 		lastOncall = dayOncall
 	}
 
-  nowOncaller := oncall.Days[dateFormat(time.Now())].Victim
-  
+	nowOncaller := oncall.Days[dateFormat(time.Now())].Victim
+
 	// Check to see if today's oncaller has changed
 	if todayOncaller.Code != nowOncaller.Code {
 		// Notify the new oncaller
@@ -243,25 +243,25 @@ func main() {
 		}
 	}
 
-  // Send Slack notifications if it's called for. First to channel, then to the oncaller.
-  message := fmt.Sprintf("Hello! This is to let you know that %s is now oncall.",
-                         nowOncaller.Code)
+	// Send Slack notifications if it's called for. First to channel, then to the oncaller.
+	message := fmt.Sprintf("Hello! This is to let you know that %s is now oncall.",
+		nowOncaller.Code)
 
-  if *notifySlack && config.SlackKey != ""{
-    err := doSlackNotify(message, config.SlackKey)
-    if err != nil {
+	if *notifySlack && config.SlackKey != "" {
+		err := doSlackNotify(message, config.SlackChannel)
+		if err != nil {
 			fmt.Printf("Error sending Slack notification: %s\n", err)
 		}
-  }
+	}
 
-  if *notifySlack && nowOncaller.SlackID != ""{
-    err := doSlackNotify(message, nowOncaller.SlackID)
+	if *notifySlack && nowOncaller.SlackID != "" {
+		err := doSlackNotify(message, nowOncaller.SlackID)
 		if err != nil {
-  		fmt.Printf("Error sending Slack notification: %s\n", err)
+			fmt.Printf("Error sending Slack notification: %s\n", err)
 		}
-  }
+	}
 	// Finally, notify current (or next) victim if required.
-	
+
 	var notifyresult error
 	switch *notifyVictim {
 	case "today":
