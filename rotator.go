@@ -247,14 +247,14 @@ func main() {
   message := fmt.Sprintf("Hello! This is to let you know that %s is now oncall.",
                          nowOncaller.Code)
 
-  if *notifySlack && config.SlackKey {
+  if *notifySlack && config.SlackKey != ""{
     err := doSlackNotify(message, config.SlackKey)
     if err != nil {
 			fmt.Printf("Error sending Slack notification: %s\n", err)
 		}
   }
 
-  if *notifySlack && nowOncaller.SlackID {
+  if *notifySlack && nowOncaller.SlackID != ""{
     err := doSlackNotify(message, nowOncaller.SlackID)
 		if err != nil {
   		fmt.Printf("Error sending Slack notification: %s\n", err)
