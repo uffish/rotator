@@ -16,12 +16,14 @@ func doSlackNotify(message string, destination string) error {
 			Text:    "some text",
 		}
 	  params.Attachments = []slack.Attachment{attach} */
+	params.Username = "rotator"
+	params.IconEmoji = ":umbrella:"
 	channel := config.SlackChannel
 	if destination != "" {
 		channel = destination
 	}
 	if *flagDebug {
-		fmt.Printf("Attempting to send %s to %s with token %s", message, channel, config.SlackKey)
+		fmt.Printf("Attempting to send %s to %s with token %s\n", message, channel, config.SlackKey)
 	}
 	c, timestamp, err := slackAPI.PostMessage(channel, message, params)
 	if err != nil {
@@ -29,7 +31,7 @@ func doSlackNotify(message string, destination string) error {
 		return err
 	}
 	if *flagDebug {
-		fmt.Printf("Message sent to channel %s at %s", c, timestamp)
+		fmt.Printf("Message sent successfully to channel %s at %s\n", c, timestamp)
 	}
 	return err
 }
