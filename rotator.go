@@ -254,7 +254,7 @@ func main() {
 		}
   }
 
-  if *notifySlack && nowOncaller.SlackID] {
+  if *notifySlack && nowOncaller.SlackID {
     err := doSlackNotify(message, nowOncaller.SlackID)
 		if err != nil {
   		fmt.Printf("Error sending Slack notification: %s\n", err)
