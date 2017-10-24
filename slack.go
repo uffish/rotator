@@ -33,6 +33,8 @@ func doSlackDM(message string, destination string) error {
 		fmt.Printf("Opened DM channel ID %s to %s\n", channel, destID)
 	}
 	params := slack.PostMessageParameters{}
+	params.Username = "rotator"
+	params.IconEmoji = ":umbrella:"
 	slackAPI.PostMessage(channel, message, params)
 	slackAPI.CloseIMChannel(channel)
 	return nil
