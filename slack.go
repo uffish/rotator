@@ -1,10 +1,18 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/nlopes/slack"
 )
+
+func getSlackParams() slack.PostMessageParameters {
+	params := slack.NewPostMessageParameters()
+	params.Username = "rotator"
+	params.IconEmoji = ":umbrella:"
+	return params
+}
 
 func doSlackDM(message string, destination string) error {
 	var destID string
@@ -27,31 +35,20 @@ func doSlackDM(message string, destination string) error {
 
 	_, _, channel, err := slackAPI.OpenIMChannel(destID)
 	if err != nil {
-		return err
+		return errors.New("Couldn't open IM channel")
 	}
+
+	slackAPI.PostMessage(channel, message, getSlackParams())
 	if *flagDebug {
-		fmt.Printf("Opened DM channel ID %s to %s\n", channel, destID)
+		fmt.Printf("Sent DM on channel ID %s to %s\n", channel, destID)
 	}
-	params := slack.PostMessageParameters{}
-	params.Username = "rotator"
-	params.IconEmoji = ":umbrella:"
-	slackAPI.PostMessage(channel, message, params)
 	slackAPI.CloseIMChannel(channel)
-	return nil
+	return err
 }
 
 func doSlackNotify(message string, destination string) error {
-	var err error
 
 	slackAPI := slack.New(config.SlackKey)
-	params := slack.PostMessageParameters{}
-	/* attach := slack.Attachment{
-			Pretext: "my pretext",
-			Text:    "some text",
-		}
-	  params.Attachments = []slack.Attachment{attach} */
-	params.Username = "rotator"
-	params.IconEmoji = ":umbrella:"
 	channel := config.SlackChannel
 	if destination != "" {
 		channel = destination
@@ -59,9 +56,8 @@ func doSlackNotify(message string, destination string) error {
 	if *flagDebug {
 		fmt.Printf("Attempting to send %s to %s with token %s\n", message, channel, config.SlackKey)
 	}
-	c, timestamp, err := slackAPI.PostMessage(channel, message, params)
+	c, timestamp, err := slackAPI.PostMessage(channel, message, getSlackParams())
 	if err != nil {
-		fmt.Printf("%s\n", err)
 		return err
 	}
 	if *flagDebug {
