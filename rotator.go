@@ -255,7 +255,7 @@ func main() {
 	}
 
 	// Send Slack notifications if it's called for. First to channel, then to the oncaller.
-	message := fmt.Sprintf("It's %s, and %s is currently on duty.",
+	message := fmt.Sprintf("It's %s, and @%s is currently on duty.",
 		time.Now().Local().Format("15:04"),
 		nowOncaller.Code)
 
