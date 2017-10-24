@@ -251,16 +251,27 @@ func main() {
 			if err != nil {
 				fmt.Printf("Error sending Slack notification: %s\n", err)
 			}
+			// and DM the victim too
+			err = doSlackDM(message, nowOncaller.Code)
+			if err != nil {
+				fmt.Printf("Error sending Slack notification: %s\n", err)
+			}
 		}
 	}
 
 	// Send Slack notifications if it's called for. First to channel, then to the oncaller.
-	message := fmt.Sprintf("It's %s, and @%s is currently on duty.",
+	message := fmt.Sprintf("It's %s, and %s is currently on duty.",
 		time.Now().Local().Format("15:04"),
 		nowOncaller.Code)
-
+	directMessage := fmt.Sprintf("Hello, %s! Just a reminder that you're on duty.",
+		nowOncaller.Code)
 	if *notifySlack && config.SlackKey != "" {
 		err := doSlackNotify(message, config.SlackChannel)
+		if err != nil {
+			fmt.Printf("Error sending Slack notification: %s\n", err)
+		}
+		// If there's a Slack user by that name, DM them as well.
+		err = doSlackDM(directMessage, nowOncaller.Code)
 		if err != nil {
 			fmt.Printf("Error sending Slack notification: %s\n", err)
 		}
