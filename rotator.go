@@ -53,6 +53,7 @@ type oncallPerson struct {
 	Code          string
 	CalendarEmail string
 	Email         string
+	Phone         string
 	SlackID       string
 }
 
@@ -84,6 +85,7 @@ var (
 	notifyVictim   = flag.String("notify", "", "Send mail to whoever is oncall [today] or [tomorrow].")
 	notifySlack    = flag.Bool("slack", false, "Send Slack notifications to/of the current oncaller.")
 	flagDebug      = flag.Bool("d", false, "Print spammy debugging information")
+	flagPrintOnly  = flag.Bool("print_oncall", false, "Print today's oncall and exit")
 	flagVerbose    = flag.Bool("v", false, "Be a bit more verbose")
 	flagDryRun     = flag.Bool("dry_run", false, "Don't actually write any calendar entries")
 	flagUnrestrict = flag.Bool("unrestrict", false, "Start restrictions from zero (for recasting schedule)")
@@ -146,6 +148,12 @@ func main() {
 	// Stash today's oncaller for future reference (may be empty)
 	oncall.Days[dateFormat(time.Now())] = getOncallByDay(srv, time.Now())
 	todayOncaller := oncall.Days[dateFormat(time.Now())].Victim
+
+	// Print oncaller and exit if that's all we need to do.
+	if *flagPrintOnly {
+		fmt.Printf("%s,%s\n", todayOncaller.Code, todayOncaller.Phone)
+		os.Exit(1)
+	}
 
 	// Generate the monitoring file if that's all we need to do.
 	if *monitorFile != "" {

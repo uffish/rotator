@@ -23,20 +23,26 @@ oncallers:
   - order: 0
     code: aa
     email: alice.anderson@example.com
+    phone: +43123456789
   - order: 1
     code: bob
     calendaremail: bob.athome@example.org
     email: bob.bobson@example.com
+    phone: +43123456789
   - order: 2
     code: fb
     email: fred.bloggs@example.com
+    phone: +43123456789
   - order: 3
     code: jd
     calendaremail: jane.doe.home@example.net
     email: jane.doe@example.com
+    phone: +43123456789
   - order: 4
     code: mm
     email: max.mustermann@example.com
+    phone: +43123456789
   - order: 5
     code: em
     email: erika.mustermann@example.com
+    phone: +43123456789
