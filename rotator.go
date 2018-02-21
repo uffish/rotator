@@ -31,6 +31,7 @@ type Config struct {
 	SlackKey             string
 	SlackChannel         string
 	ShadowOncaller       string
+	OpsGenie             ogConfig
 	AwayWords            []string
 	Oncallers            []oncallPerson
 }
@@ -238,6 +239,11 @@ func main() {
 
 		setOncallByDay(srv, day, dayOncall)
 		oncall.Days[dateFormat(day)] = &oncallDay{dayOncall, false}
+		// FIXME(mpk): Handle changing today's oncall via OpsGenie properly
+		// Call out to opsgenie here
+		if config.OpsGenie.APIKey != "" {
+			setOpsgenieByDay(day, dayOncall.Email)
+		}
 		lastOncall = dayOncall
 	}
 

@@ -12,6 +12,12 @@ slackemergency: true
 slackkey: my_slack_api_key
 slackchannel: my_slack_channel_id
 
+opsgenie:
+  apikey: my_opsgenie_api_key
+  scheduleid: my_schedule_id
+  weekdayschedule: weekday_schedule_name
+  weekendschedule: weekend_schedule_name
+
 awaywords:
   - away
   - urlaub
