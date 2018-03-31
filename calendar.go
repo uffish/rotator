@@ -256,7 +256,7 @@ func setOncallByDay(srv *calendar.Service, day time.Time, victim oncallPerson) b
 		restrictions.Detail[victim.Code].WeekendsBooked++
 	}
 	// And decrement it if it was rewritten.
-	if rewritten {
+	if rewritten && existing.Victim.Code != "" {
 		restrictions.Detail[existing.Victim.Code].DaysBooked--
 		if isWeekend(day) {
 			restrictions.Detail[existing.Victim.Code].WeekendsBooked--
